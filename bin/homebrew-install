@@ -197,6 +197,8 @@ class Build
 
     ENV.activate_extensions!(env: "std")
 
+    Stdenv.const_set "SAFE_CFLAGS_FLAGS", "-Wno-error -pipe"
+
     if superenv?("std")
       ENV.keg_only_deps = keg_only_deps
       ENV.deps = formula_deps

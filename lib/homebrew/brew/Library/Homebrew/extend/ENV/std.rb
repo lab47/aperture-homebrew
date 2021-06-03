@@ -11,7 +11,7 @@ module Stdenv
   include SharedEnvExtension
 
   # @private
-  SAFE_CFLAGS_FLAGS = "-pipe"
+  SAFE_CFLAGS_FLAGS = "-w -pipe"
 
   # @private
   sig {
