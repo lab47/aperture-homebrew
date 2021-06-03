@@ -165,6 +165,8 @@ formula = r"""
 <%= code %>
 """
 
+import "homebrew-install" as hi
+
 <% unless deps.empty? %>
 import <%= deps.map.with_index { |v,i| "\"#{v}\" as i#{i}" }.join(", ") %>
 <% end %>
@@ -172,7 +174,7 @@ import <%= deps.map.with_index { |v,i| "\"#{v}\" as i#{i}" }.join(", ") %>
 pkg(
   name: "<%= form.name %>",
   version: "<%= form.stable.version %>",
-  dependencies: [<%= deps.map.with_index { |_,i| "i#{i}" }.join(", ") %>],
+  dependencies: [<%= (["hi"]+deps.map.with_index { |_,i| "i#{i}" }).join(", ") %>],
 
   def install(ctx) {
     ctx.write_file(join(ctx.build, "<%= form.name %>.rb"), formula)
