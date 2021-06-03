@@ -1,12 +1,16 @@
+#!/usr/bin/env ruby
+#
 dir = ARGV.shift
+out = ARGV.shift
 
-require_relative "./path_setup"
+require_relative "../lib/homebrew/path_setup"
 require 'global'
 require 'formulary'
 require 'formula_installer'
 
 require 'zlib'
 require 'base64'
+require 'fileutils'
 
 # form = Formulary.factory(Pathname.new(dir))
 # p form.name
@@ -59,6 +63,18 @@ def fixup_license(li)
     raise "huh: #{li}"
   end
 end
+
+$input = dir
+
+CoreTap.instance.instance_variable_set(:@path, Pathname.new(dir))
+
+# To prevent Formula#initialize from trying to validate the core tap, which
+# won't exist in this context.
+# module Formulary
+  # def self.core_path(name)
+    # Pathname.new("nope")
+  # end
+# end
 
 skip = %w!fetch libtool cmake pkg-config automake autoconf!
 
@@ -133,7 +149,17 @@ Dir[dir+"/*.rb"].each do |file|
 
   import_deps = deps.map.with_index { |v,i| [v, "i#{i}"] }
 
-  File.open("gen-packages/#{name}.xcr", "w") do |f|
+  if name.size < 2
+    short = name
+  else
+    short = name[0..1]
+  end
+
+  dir = File.join(out, short)
+
+  FileUtils.mkdir_p dir
+
+  File.open("#{dir}/#{name}.xcr", "w") do |f|
     temp = <<-'EOF'
 formula = r"""
 <%= code %>
@@ -150,7 +176,6 @@ pkg(
 
   def install(ctx) {
     ctx.write_file(join(ctx.build, "<%= form.name %>.rb"), formula)
-    ctx.append_env("PATH", "/Users/evan/git/iris-gen/bin")
     ctx.system("homebrew-install", ctx.prefix, "./<%= form.name %>.rb")
   }
 )
