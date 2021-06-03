@@ -1,0 +1,387 @@
+#!/usr/bin/env ruby
+
+require 'json'
+require 'base64'
+
+$in_build_dir = true
+
+require_relative "../lib/homebrew/path_setup"
+
+gem_home = File.expand_path(File.dirname(__FILE__) + "/../lib/brew/Library/Homebrew/vendor/bundle/ruby/2.6.0/gems")
+
+ENV["GEM_HOME"] = gem_home
+ENV["GEM_PATH"] = "#{gem_home}:#{Gem.default_dir}"
+
+Gem.clear_paths
+Gem::Specification.reset
+
+ENV["HOMEBREW_ENV"] = "std"
+
+target = File.expand_path(ARGV.shift)
+
+if File.directory?(target)
+  require 'fileutils'
+  FileUtils.rm_rf target
+end
+
+Dir.mkdir(target)
+
+$target = target
+
+build_info = JSON.parse Base64.decode64(ENV['APERTURE_BUILD_INFO'])
+
+require 'pathname'
+
+$fake_formula = {}
+$known_packages = {}
+
+require 'global'
+require 'formulary'
+require 'dependencies'
+require 'dependency'
+
+top_deps = []
+
+class StubFormula < OpenStruct
+  def opt_bin
+    opt_prefix/"bin"
+  end
+
+  def opt_include
+    opt_prefix/"include"
+  end
+
+  def opt_lib
+    opt_prefix/"lib"
+  end
+
+  def opt_libexec
+    opt_prefix/"libexec"
+  end
+
+  def opt_sbin
+    opt_prefix/"sbin"
+  end
+
+  def opt_share
+    opt_prefix/"share"
+  end
+
+  def opt_pkgshare
+    opt_prefix/"share"/name
+  end
+
+  def opt_elisp
+    opt_prefix/"share/emacs/site-lisp"/name
+  end
+
+  def opt_frameworks
+    opt_prefix/"Frameworks"
+  end
+end
+
+# To prevent Formula#initialize from trying to validate the core tap, which
+# won't exist in this context.
+module Formulary
+  def self.core_path(name)
+    "nope"
+  end
+end
+
+build_info['dependencies'].each do |name,dep|
+  top_deps.push Dependency.new(name, [:build, :runtime])
+
+  $known_packages[name] = Pathname.new(dep['path'])
+
+  deps = Dependencies.new(*dep['dependencies'].map { |i|
+    Dependency.new(i, [:build, :runtime])
+  })
+
+  $fake_formula[name] = StubFormula.new(
+    name: name,
+    version: dep['version'],
+    opt_prefix: Pathname.new(dep['path']),
+    deps: deps,
+  )
+end
+
+$fake_formula[build_info['name']] = OpenStruct.new(
+  name: build_info['name'],
+  version: build_info['version'],
+  opt_prefix: Pathname.new($target),
+  deps: Dependencies.new(*top_deps),
+)
+
+old_trap = trap("INT") { exit! 130 }
+
+require "global"
+require "build_options"
+require "cxxstdlib"
+require "keg"
+require "extend/ENV"
+require "debrew"
+require "fcntl"
+require "socket"
+require "cmd/install"
+
+require 'homebrew/iris/extend/os/formula'
+
+class Build
+  attr_reader :formula, :deps, :reqs, :args
+
+  def initialize(formula, options, args: nil)
+    @formula = formula
+    @formula.build = BuildOptions.new(options, formula.options)
+    @args = args
+
+    if true #  @args.ignore_deps?
+      @deps = []
+      @reqs = []
+    else
+      @deps = expand_deps
+      @reqs = expand_reqs
+    end
+  end
+
+  def post_superenv_hacks
+    return
+    # Only allow Homebrew-approved directories into the PATH, unless
+    # a formula opts-in to allowing the user's path.
+    return unless formula.env.userpaths? || reqs.any? { |rq| rq.env.userpaths? }
+
+    ENV.userpaths!
+  end
+
+  def effective_build_options_for(dependent)
+    args  = dependent.build.used_options
+    args |= Tab.for_formula(dependent).used_options
+    BuildOptions.new(args, dependent.options)
+  end
+
+  def expand_reqs
+    formula.recursive_requirements do |dependent, req|
+      build = effective_build_options_for(dependent)
+      if req.prune_from_option?(build)
+        Requirement.prune
+      elsif req.prune_if_build_and_not_dependent?(dependent, formula)
+        Requirement.prune
+      elsif req.test?
+        Requirement.prune
+      end
+    end
+  end
+
+  def expand_deps
+    formula.recursive_dependencies do |dependent, dep|
+      build = effective_build_options_for(dependent)
+      if dep.prune_from_option?(build)
+        Dependency.prune
+      elsif dep.prune_if_build_and_not_dependent?(dependent, formula)
+        Dependency.prune
+      elsif dep.build?
+        Dependency.keep_but_prune_recursive_deps
+      elsif dep.test?
+        Dependency.prune
+      end
+    end
+  end
+
+  def install
+    formula_deps = deps.map(&:to_formula)
+    keg_only_deps = formula_deps.select(&:keg_only?)
+    run_time_deps = deps.reject(&:build?).map(&:to_formula)
+
+    formula_deps.each do |dep|
+      fixopt(dep) unless dep.opt_prefix.directory?
+    end
+
+    ENV.activate_extensions!(env: "std")
+
+    if superenv?("std")
+      ENV.keg_only_deps = keg_only_deps
+      ENV.deps = formula_deps
+      ENV.run_time_deps = run_time_deps
+      # ENV.setup_build_environment(
+        # formula:      formula,
+        # cc:           args.cc,
+        # build_bottle: args.build_bottle?,
+        # bottle_arch:  args.bottle_arch,
+      # )
+      # post_superenv_hacks
+      reqs.each do |req|
+        req.modify_build_environment(
+          env: args.env, cc: args.cc, build_bottle: args.build_bottle?, bottle_arch: args.bottle_arch,
+        )
+      end
+      deps.each(&:modify_build_environment)
+    else
+      ENV.setup_build_environment(
+        formula:      formula,
+        cc:           args.cc,
+        build_bottle: args.build_bottle?,
+        bottle_arch:  args.bottle_arch,
+      )
+      reqs.each do |req|
+        req.modify_build_environment(
+          env: args.env, cc: args.cc, build_bottle: args.build_bottle?, bottle_arch: args.bottle_arch,
+        )
+      end
+      deps.each(&:modify_build_environment)
+
+      keg_only_deps.each do |dep|
+        ENV.prepend_path "PATH", dep.opt_bin.to_s
+        ENV.prepend_path "PKG_CONFIG_PATH", "#{dep.opt_lib}/pkgconfig"
+        ENV.prepend_path "PKG_CONFIG_PATH", "#{dep.opt_share}/pkgconfig"
+        ENV.prepend_path "ACLOCAL_PATH", "#{dep.opt_share}/aclocal"
+        ENV.prepend_path "CMAKE_PREFIX_PATH", dep.opt_prefix.to_s
+        ENV.prepend "LDFLAGS", "-L#{dep.opt_lib}" if dep.opt_lib.directory?
+        ENV.prepend "CPPFLAGS", "-I#{dep.opt_include}" if dep.opt_include.directory?
+      end
+
+      $known_packages.each do |name,dir|
+        ENV.prepend_path "PATH", "#{dir}/bin"
+        ENV.prepend_path "PKG_CONFIG_PATH", "#{dir}/lib/pkgconfig"
+        ENV.prepend_path "PKG_CONFIG_PATH", "#{dir}/share/pkgconfig"
+        ENV.prepend_path "ACLOCAL_PATH", "#{dir}/share/aclocal"
+        ENV.prepend_path "CMAKE_PREFIX_PATH", dir
+        ENV.prepend "LDFLAGS", "-L#{dir}/lib"
+        ENV.prepend "CPPFLAGS", "-I#{dir}/include"
+      end
+    end
+
+    new_env = {
+      "TMPDIR" => HOMEBREW_TEMP,
+      "TEMP"   => HOMEBREW_TEMP,
+      "TMP"    => HOMEBREW_TEMP,
+    }
+
+    with_env(new_env) do
+      formula.extend(Debrew::Formula) if @args.debug?
+
+      formula.update_head_version
+
+      formula.brew(fetch: true) do |_formula, staging|
+        # For head builds, HOMEBREW_FORMULA_PREFIX should include the commit,
+        # which is not known until after the formula has been staged.
+        ENV["HOMEBREW_FORMULA_PREFIX"] = $target
+
+        staging.retain! if @args.keep_tmp?
+        formula.patch
+
+        if @args.git?
+          system "git", "init"
+          system "git", "add", "-A"
+        end
+        if @args.interactive?
+          ohai "Entering interactive mode"
+          puts "Type `exit` to return and finalize the installation."
+          puts "Install to this prefix: #{formula.prefix}"
+
+          if @args.git?
+            puts "This directory is now a git repo. Make your changes and then use:"
+            puts "  git diff | pbcopy"
+            puts "to copy the diff to the clipboard."
+          end
+
+          interactive_shell(formula)
+        else
+          formula.prefix.mkpath
+
+          (formula.logs/"00.options.out").write \
+            "#{formula.full_name} #{formula.build.used_options.sort.join(" ")}".strip
+
+          formula.install
+
+          # stdlibs = detect_stdlibs(ENV.compiler)
+          # tab = Tab.create(formula, ENV.compiler, stdlibs.first)
+          # tab.write
+
+          # Find and link metafiles
+          formula.prefix.install_metafiles formula.buildpath
+          formula.prefix.install_metafiles formula.libexec if formula.libexec.exist?
+        end
+      end
+    end
+  end
+
+  def detect_stdlibs(compiler)
+    keg = Keg.new(formula.prefix)
+
+    # The stdlib recorded in the install receipt is used during dependency
+    # compatibility checks, so we only care about the stdlib that libraries
+    # link against.
+    keg.detect_cxx_stdlibs(skip_executables: true)
+  end
+
+  def fixopt(f)
+    path = if f.linked_keg.directory? && f.linked_keg.symlink?
+      f.linked_keg.resolved_path
+    elsif f.prefix.directory?
+      f.prefix
+    elsif (kids = f.rack.children).size == 1 && kids.first.directory?
+      kids.first
+    else
+      raise
+    end
+    Keg.new(path).optlink
+  rescue
+    raise "#{f.opt_prefix} not present or broken\nPlease reinstall #{f.full_name}. Sorry :("
+  end
+end
+
+begin
+  args = Homebrew.install_args.parse
+  # error_pipe = UNIXSocket.open(ENV["HOMEBREW_ERROR_PIPE"], &:recv_io)
+  # error_pipe.fcntl(Fcntl::F_SETFD, Fcntl::FD_CLOEXEC)
+
+  trap("INT", old_trap)
+
+  named = args.named
+  formula = Formulary.factory(Pathname.new(named.first))
+
+  ENV['HOMEBREW_DISABLE_LOAD_FORMULA'] = 'true'
+
+  module Formulary
+    def self.factory(ref, *args)
+      $fake_formula[ref] || raise("Formula not a hard dependency: #{ref}")
+    end
+  end
+
+  # formula = args.named.load_formula_or_cask(Pathname.new(named.first), only: :formula)
+  options = Options.create(args.flags_only)
+
+  $known_packages[formula.name] = Pathname.new($target)
+
+  # Cleaner.new(formula).clean
+  FileUtils.rm_rf(formula.logs)
+
+  build   = Build.new(formula, options, args: args)
+
+  puts "Installing into: #{formula.prefix}"
+ 
+  formula.with_context(verbose: true) do
+    build.install
+    formula.post_install
+  end
+rescue Exception => e # rubocop:disable Lint/RescueException
+  raise e
+  error_hash = JSON.parse e.to_json
+
+  # Special case: need to recreate BuildErrors in full
+  # for proper analytics reporting and error messages.
+  # BuildErrors are specific to build processes and not other
+  # children, which is why we create the necessary state here
+  # and not in Utils.safe_fork.
+  if error_hash["json_class"] == "BuildError"
+    error_hash["cmd"] = e.cmd
+    error_hash["args"] = e.args
+    error_hash["env"] = e.env
+  elsif error_hash["json_class"] == "ErrorDuringExecution"
+    error_hash["cmd"] = e.cmd
+    error_hash["status"] = e.status.exitstatus
+    error_hash["output"] = e.output
+  end
+
+  STDERR.puts error_hash.to_json
+  exit! 1
+end

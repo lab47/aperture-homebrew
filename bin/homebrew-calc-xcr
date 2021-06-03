@@ -1,0 +1,173 @@
+dir = ARGV.shift
+
+require_relative "./path_setup"
+require 'global'
+require 'formulary'
+require 'formula_installer'
+
+require 'zlib'
+require 'base64'
+
+# form = Formulary.factory(Pathname.new(dir))
+# p form.name
+# c = form.bottle_specification.collector
+
+# c.each_key do |key|
+  # p key, c[key][:checksum].to_s
+# end
+
+def sm(os, ver, arch)
+  { os: os, version: ver, arch: arch}
+end
+
+sys_map = {
+  arm64_big_sur: sm("macos", "11", "arm64"),
+  big_sur: sm("macos", "11", "x86_64"),
+  catalina: sm("macos", "10.15", "x86_64"),
+  mojave: sm("macos", "10.14", "x86_64"),
+  high_sierra: sm("macos", "10.13", "x86_64"),
+  sierra: sm("macos", "10.12", "x86_64"),
+  el_capitan: sm("macos", "10.11", "x86_64"),
+  yosemite: sm("macos", "10.10", "x86_64"),
+  x86_64_linux: sm("linux", "unknown", "x86_64"),
+}
+
+cellars = Hash.new(0)
+
+def fixup_license(li)
+  case li
+  when String
+    {name: li}
+  when Hash
+    type, val = li.first
+    case type
+    when :all_of, :any_of
+      {type => fixup_license(val)}
+    else
+      {name: type, with: fixup_license(val.first.last)}
+    end
+  when Array
+    li.map { |l| fixup_license(l) }
+  when nil
+    nil
+  when :cannot_represent
+    {unknown: "cannot_represent"}
+  when :public_domain
+    {name: "public_domain"}
+  else
+    p li
+    raise "huh: #{li}"
+  end
+end
+
+skip = %w!fetch libtool cmake pkg-config automake autoconf!
+
+Dir[dir+"/*.rb"].each do |file|
+  next if skip.any? { |s| file.end_with?("#{s}.rb") }
+  begin
+    form = Formulary.factory(Pathname.new(file))
+  rescue FormulaUnreadableError
+    p skip: file
+    next
+  end
+
+  name = form.name
+
+  deps = []
+
+  form.deps.each do |d|
+    unless d.tags == [:test]
+      deps << d.name
+    end
+  end
+
+  # venv wants to see all the deps for opt_prefix to work, so the easiest
+  # way is to just map them all as build dependencies here.
+  if deps.include? "python@3.9"
+    form.recursive_dependencies.each do |dep|
+      deps << dep.name
+    end
+
+    deps = deps.sort.uniq
+  end
+
+  c = form.bottle_specification.collector
+
+  binaries = []
+
+  c.each_key do |key|
+    sys = sys_map[key]
+    if !sys
+      p unknown: key, file: file
+      next
+    end
+
+    ent = c[key]
+    cellar = ent[:cellar]
+
+    cellars[cellar] += 1
+
+    if !(cellar == :any || cellar == :any_skip_relocation || cellar[0] == '/')
+      p [name, key, cellar]
+    end
+
+    val = {
+      system: sys,
+      checksum: { sha256: ent[:checksum].to_s },
+    }
+
+    if cellar == :any_skip_relocation
+      val[:options] = { skip_relocation: true }
+    elsif cellar[0] == '/'
+      val[:options] = { install_path: cellar }
+    end
+
+    binaries << val
+  end
+
+  if binaries.empty?
+    cellars[:source] += 1
+  end
+
+  code = File.read(file)
+
+  import_deps = deps.map.with_index { |v,i| [v, "i#{i}"] }
+
+  File.open("gen-packages/#{name}.xcr", "w") do |f|
+    temp = <<-'EOF'
+formula = r"""
+<%= code %>
+"""
+
+<% unless deps.empty? %>
+import <%= deps.map.with_index { |v,i| "\"#{v}\" as i#{i}" }.join(", ") %>
+<% end %>
+
+pkg(
+  name: "<%= form.name %>",
+  version: "<%= form.stable.version %>",
+  dependencies: [<%= deps.map.with_index { |_,i| "i#{i}" }.join(", ") %>],
+
+  def install(ctx) {
+    ctx.write_file(join(ctx.build, "<%= form.name %>.rb"), formula)
+    ctx.append_env("PATH", "/Users/evan/git/iris-gen/bin")
+    ctx.system("homebrew-install", ctx.prefix, "./<%= form.name %>.rb")
+  }
+)
+
+    EOF
+
+    f.puts ERB.new(temp).result(binding)
+  end
+end
+
+
+  p cellars
+
+# jq = Formulary.factory("jq")
+# jq.extend ChellPatch
+# require 'json'
+# STDOUT.puts JSON.pretty_generate(jq.to_hash)
+
+# fi = FormulaInstaller.new(jq)
+# fi.build
