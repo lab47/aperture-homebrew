@@ -5,6 +5,17 @@ require 'base64'
 
 $in_build_dir = true
 
+target = File.expand_path(ARGV.shift)
+
+if File.directory?(target)
+  require 'fileutils'
+  FileUtils.rm_rf target
+end
+
+Dir.mkdir(target)
+
+$target = target
+
 require_relative "../lib/homebrew/path_setup"
 
 gem_home = File.expand_path(File.dirname(__FILE__) + "/../lib/brew/Library/Homebrew/vendor/bundle/ruby/2.6.0/gems")
@@ -16,17 +27,6 @@ Gem.clear_paths
 Gem::Specification.reset
 
 ENV["HOMEBREW_ENV"] = "std"
-
-target = File.expand_path(ARGV.shift)
-
-if File.directory?(target)
-  require 'fileutils'
-  FileUtils.rm_rf target
-end
-
-Dir.mkdir(target)
-
-$target = target
 
 build_info = JSON.parse Base64.decode64(ENV['APERTURE_BUILD_INFO'])
 
@@ -125,6 +125,16 @@ require "socket"
 require "cmd/install"
 
 require 'homebrew/iris/extend/os/formula'
+
+class Formula
+  def self.names
+    $known_packages.keys
+  end
+
+  def self.core_names
+    $known_packages.keys
+  end
+end
 
 class Build
   attr_reader :formula, :deps, :reqs, :args

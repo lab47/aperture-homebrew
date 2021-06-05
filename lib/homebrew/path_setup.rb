@@ -12,12 +12,19 @@ else
   tmp = File.expand_path(File.dirname(__FILE__) + "/../tmp")
 end
 
+$target ||= ""
+
+if $target != "" 
+  ENV["HOMEBREW_PREFIX"] = $target
+else
+  ENV["HOMEBREW_PREFIX"] = File.join(tmp, "prefix")
+end
+
 Dir.mkdir File.join(tmp, "Cellar") rescue nil
 Dir.mkdir File.join(tmp, "tmp") rescue nil
 Dir.mkdir File.join(tmp, "Logs") rescue nil
 Dir.mkdir File.join(tmp, "Cache") rescue nil
 Dir.mkdir File.join(tmp, "prefix") rescue nil
-ENV["HOMEBREW_PREFIX"] = File.join(tmp, "prefix")
 ENV["HOMEBREW_CELLAR"] = File.join(tmp, "Cellar")
 ENV["HOMEBREW_LOGS"] = File.join(tmp, "Logs")
 ENV["HOMEBREW_CACHE"] = File.join(tmp, "Cache")
