@@ -78,6 +78,8 @@ CoreTap.instance.instance_variable_set(:@path, Pathname.new(dir))
 
 skip = %w!fetch libtool cmake pkg-config automake autoconf!
 
+total = 0
+
 Dir[dir+"/*.rb"].each do |file|
   next if skip.any? { |s| file.end_with?("#{s}.rb") }
   begin
@@ -107,45 +109,20 @@ Dir[dir+"/*.rb"].each do |file|
     deps = deps.sort.uniq
   end
 
-  c = form.bottle_specification.collector
+  code = File.read(file)
 
-  binaries = []
-
-  c.each_key do |key|
-    sys = sys_map[key]
-    if !sys
-      p unknown: key, file: file
-      next
-    end
-
-    ent = c[key]
-    cellar = ent[:cellar]
-
-    cellars[cellar] += 1
-
-    if !(cellar == :any || cellar == :any_skip_relocation || cellar[0] == '/')
-      p [name, key, cellar]
-    end
-
-    val = {
-      system: sys,
-      checksum: { sha256: ent[:checksum].to_s },
+  # openssl@1.1 tries to detect perl without it being a dep, which breaks
+  # our scheme. So we're going to just patch that line out for now.
+  if name == "openssl@1.1"
+    lines = code.split("\n").map { |l|
+      l.gsub(
+        'ENV["PERL"] = Formula["perl"].opt_bin/"perl" if which("perl") == Formula["perl"].opt_bin/"perl"',
+        '# ENV["PERL"] = Formula["perl"].opt_bin/"perl" if which("perl") == Formula["perl"].opt_bin/"perl"'
+      )
     }
 
-    if cellar == :any_skip_relocation
-      val[:options] = { skip_relocation: true }
-    elsif cellar[0] == '/'
-      val[:options] = { install_path: cellar }
-    end
-
-    binaries << val
+    code = lines.join("\n")
   end
-
-  if binaries.empty?
-    cellars[:source] += 1
-  end
-
-  code = File.read(file)
 
   import_deps = deps.map.with_index { |v,i| [v, "i#{i}"] }
 
@@ -158,6 +135,8 @@ Dir[dir+"/*.rb"].each do |file|
   dir = File.join(out, short)
 
   FileUtils.mkdir_p dir
+
+  total += 1
 
   File.open("#{dir}/#{name}.xcr", "w") do |f|
     temp = <<-'EOF'
@@ -188,13 +167,4 @@ pkg(
   end
 end
 
-
-  p cellars
-
-# jq = Formulary.factory("jq")
-# jq.extend ChellPatch
-# require 'json'
-# STDOUT.puts JSON.pretty_generate(jq.to_hash)
-
-# fi = FormulaInstaller.new(jq)
-# fi.build
+puts "Total scripts: #{total}"
