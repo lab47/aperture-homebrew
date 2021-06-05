@@ -2899,7 +2899,8 @@ class Formula
     #
     # If `satisfy` returns `false` then a bottle will not be used and instead
     # the {Formula} will be built from source and `reason` will be printed.
-    def pour_bottle?(&block)
+    def pour_bottle?(only_if: nil, &block)
+      return
       @pour_bottle_check = PourBottleCheck.new(self)
       @pour_bottle_check.instance_eval(&block)
     end
