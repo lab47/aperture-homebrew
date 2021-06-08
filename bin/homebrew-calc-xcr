@@ -145,10 +145,9 @@ formula = r"""
 """
 
 import "homebrew-install" as hi
-
 <% unless deps.empty? %>
 import <%= deps.map.with_index { |v,i| "\"#{v}\" as i#{i}" }.join(", ") %>
-<% end %>
+<% end -%>
 
 pkg(
   name: "<%= form.name %>",
@@ -157,13 +156,18 @@ pkg(
 
   def install(ctx) {
     ctx.write_file(join(ctx.build, "<%= form.name %>.rb"), formula)
-    ctx.system("homebrew-install", ctx.prefix, "./<%= form.name %>.rb")
+    ctx.system("homebrew-install", ctx.prefix, ctx.state_dir, "./<%= form.name %>.rb")
   }
+<% if form.method(:post_install).owner != Formula %>
+  def post_install(ctx) {
+    ctx.write_file(join(ctx.build, "<%= form.name %>.rb"), formula)
+    ctx.system("homebrew-install", "--post", ctx.prefix, ctx.state_dir, "./<%= form.name %>.rb")
+  }
+<% end -%>
 )
-
     EOF
 
-    f.puts ERB.new(temp).result(binding)
+    f.puts ERB.new(temp, nil, "-").result(binding)
   end
 end
 

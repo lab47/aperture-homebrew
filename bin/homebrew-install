@@ -4,17 +4,31 @@ require 'json'
 require 'base64'
 
 $in_build_dir = true
+$post_install = false
 
-target = File.expand_path(ARGV.shift)
+target = ARGV.shift
 
-if File.directory?(target)
-  require 'fileutils'
-  FileUtils.rm_rf target
+if target == "--post"
+  $post_install = true
+  target = ARGV.shift
+else
+  target = File.expand_path(target)
+
+  if File.directory?(target)
+    require 'fileutils'
+    FileUtils.rm_rf target
+  end
+
+  Dir.mkdir(target) rescue nil
 end
 
-Dir.mkdir(target)
-
 $target = target
+
+# state is the aperture state dir (usually /opt/iris/state) that packages
+# can use as a stateful common dir for various things like packages,
+# config files, etc.
+
+$state = File.expand_path(ARGV.shift)
 
 require_relative "../lib/homebrew/path_setup"
 
@@ -372,8 +386,11 @@ begin
   puts "Installing into: #{formula.prefix}"
  
   formula.with_context(verbose: true) do
-    build.install
-    formula.post_install
+    if $post_install
+      formula.post_install
+    else
+      build.install
+    end
   end
 rescue Exception => e # rubocop:disable Lint/RescueException
   raise e

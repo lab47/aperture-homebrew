@@ -12,10 +12,10 @@ else
   tmp = File.expand_path(File.dirname(__FILE__) + "/../tmp")
 end
 
-$target ||= ""
+$state ||= ""
 
-if $target != "" 
-  ENV["HOMEBREW_PREFIX"] = $target
+if $state != "" 
+  ENV["HOMEBREW_PREFIX"] = $state
 else
   ENV["HOMEBREW_PREFIX"] = File.join(tmp, "prefix")
 end
