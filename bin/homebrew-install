@@ -221,7 +221,7 @@ class Build
 
     ENV.activate_extensions!(env: "std")
 
-    Stdenv::SAFE_CFLAGS_FLAGS.replace "-Wno-error -pipe"
+    Stdenv.const_set "SAFE_CFLAGS_FLAGS", "-Wno-error -pipe"
 
     Stdenv.module_eval do
       def homebrew_extra_pkg_config_paths
