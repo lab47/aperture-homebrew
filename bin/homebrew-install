@@ -30,9 +30,9 @@ $target = target
 
 $state = File.expand_path(ARGV.shift)
 
-require_relative "../lib/homebrew/path_setup"
+require_relative "../share/homebrew/path_setup"
 
-gem_home = File.expand_path(File.dirname(__FILE__) + "/../lib/brew/Library/Homebrew/vendor/bundle/ruby/2.6.0/gems")
+gem_home = File.expand_path(File.dirname(__FILE__) + "/../share/homebrew/brew/Library/Homebrew/vendor/bundle/ruby/2.6.0/gems")
 
 ENV["GEM_HOME"] = gem_home
 ENV["GEM_PATH"] = "#{gem_home}:#{Gem.default_dir}"
@@ -221,7 +221,13 @@ class Build
 
     ENV.activate_extensions!(env: "std")
 
-    Stdenv.const_set "SAFE_CFLAGS_FLAGS", "-Wno-error -pipe"
+    Stdenv::SAFE_CFLAGS_FLAGS.replace "-Wno-error -pipe"
+
+    Stdenv.module_eval do
+      def homebrew_extra_pkg_config_paths
+        []
+      end
+    end
 
     if superenv?("std")
       ENV.keg_only_deps = keg_only_deps
