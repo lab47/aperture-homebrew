@@ -375,7 +375,7 @@ begin
 
   module Formulary
     def self.factory(ref, *args)
-      $fake_formula[ref] || raise("Formula not a hard dependency: #{ref}")
+      $fake_formula[ref] || raise(FormulaUnavailableError, "Formula not a hard dependency: #{ref}")
     end
   end
 
