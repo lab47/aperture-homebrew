@@ -3,7 +3,7 @@
 dir = ARGV.shift
 out = ARGV.shift
 
-require_relative "../lib/homebrew/path_setup"
+require_relative "../share/homebrew/path_setup"
 require 'global'
 require 'formulary'
 require 'formula_installer'
@@ -76,7 +76,7 @@ CoreTap.instance.instance_variable_set(:@path, Pathname.new(dir))
   # end
 # end
 
-skip = %w!fetch libtool cmake pkg-config automake autoconf!
+skip = %w!fetch libtool pkg-config automake autoconf!
 
 total = 0
 
