@@ -30,13 +30,11 @@ ENV["HOMEBREW_LOGS"] = File.join(tmp, "Logs")
 ENV["HOMEBREW_CACHE"] = File.join(tmp, "Cache")
 ENV["HOMEBREW_TEMP"] = ENV['TMPDIR'] || "/tmp"
 
-version = `/usr/bin/sw_vers -productVersion || echo "no"`
+version = `which sw_vers > /dev/null && sw_vers -productVersion || echo "no"`
 
 if version == "no"
-  version = "10.15.5"
+  ENV["HOMEBREW_MACOS_VERSION"] = version
 end
-
-ENV["HOMEBREW_MACOS_VERSION"] = version
 
 ENV["HOMEBREW_USER_AGENT_CURL"] = "iris 0.1"
 ENV["HOMEBREW_RUBY_PATH"] = `which ruby`.strip # "/Users/evan/.rbenv/shims/ruby"
