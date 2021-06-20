@@ -32,7 +32,7 @@ ENV["HOMEBREW_TEMP"] = ENV['TMPDIR'] || "/tmp"
 
 version = `which sw_vers > /dev/null && sw_vers -productVersion || echo "no"`
 
-if version == "no"
+if version != "no"
   ENV["HOMEBREW_MACOS_VERSION"] = version
 end
 

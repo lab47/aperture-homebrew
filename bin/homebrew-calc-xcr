@@ -99,17 +99,18 @@ Dir[dir+"/*.rb"].each do |file|
     end
   end
 
+  code = File.read(file)
+
   # venv wants to see all the deps for opt_prefix to work, so the easiest
   # way is to just map them all as build dependencies here.
-  if deps.include? "python@3.9"
-    form.recursive_dependencies.each do |dep|
+  if deps.include?("python@3.9") && /venv|virtualenv/i.match(code)
+    py = Formulary.factory("python@3.9")
+    py.recursive_dependencies.each do |dep|
       deps << dep.name
     end
 
     deps = deps.sort.uniq
   end
-
-  code = File.read(file)
 
   # openssl@1.1 tries to detect perl without it being a dep, which breaks
   # our scheme. So we're going to just patch that line out for now.
@@ -141,7 +142,7 @@ Dir[dir+"/*.rb"].each do |file|
   File.open("#{dir}/#{name}.xcr", "w") do |f|
     temp = <<-'EOF'
 formula = r"""
-<%= code %>
+<%= code.gsub('"""', '\"\"\"') %>
 """
 
 import "homebrew-install" as hi
@@ -152,6 +153,15 @@ import <%= deps.map.with_index { |v,i| "\"#{v}\" as i#{i}" }.join(", ") %>
 pkg(
   name: "<%= form.name %>",
   version: "<%= form.stable.version %>",
+  description: "<%= form.desc.gsub('"', '\"') %>",
+  url: "<%= form.homepage %>",
+  metadata: %{
+<% if form.alias_name -%>
+    "alias": <%= form.alias_name %>,
+<% end -%>
+    "license": "<%= SPDX.license_expression_to_string(form.license) %>",
+    "source": "homebrew",
+  },
   dependencies: [<%= (["hi"]+deps.map.with_index { |_,i| "i#{i}" }).join(", ") %>],
 
   def install(ctx) {
