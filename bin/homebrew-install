@@ -92,6 +92,126 @@ class StubFormula < OpenStruct
   def opt_frameworks
     opt_prefix/"Frameworks"
   end
+
+  def bin
+    prefix/"bin"
+  end
+
+  def doc
+    share/"doc"/name
+  end
+
+  def include
+    prefix/"include"
+  end
+
+  def info
+    share/"info"
+  end
+
+  def lib
+    prefix/"lib"
+  end
+
+  def libexec
+    prefix/"libexec"
+  end
+
+  def man
+    share/"man"
+  end
+
+  def man1
+    man/"man1"
+  end
+
+  def man2
+    man/"man2"
+  end
+
+  def man3
+    man/"man3"
+  end
+
+  def man4
+    man/"man4"
+  end
+
+  def man5
+    man/"man5"
+  end
+
+  def man6
+    man/"man6"
+  end
+
+  def man7
+    man/"man7"
+  end
+
+  def man8
+    man/"man8"
+  end
+
+  def sbin
+    prefix/"sbin"
+  end
+
+  def share
+    prefix/"share"
+  end
+
+  def pkgshare
+    prefix/"share"/name
+  end
+
+  def elisp
+    prefix/"share/emacs/site-lisp"/name
+  end
+
+  def frameworks
+    prefix/"Frameworks"
+  end
+
+  def kext_prefix
+    prefix/"Library/Extensions"
+  end
+
+  def etc
+    prefix/"etc"
+  end
+
+  def pkgetc
+    prefix/"etc"/name
+  end
+
+  def var
+    Pathname.new($state)/"var"
+  end
+
+  def zsh_function
+    share/"zsh/site-functions"
+  end
+
+  def fish_function
+    share/"fish/vendor_functions.d"
+  end
+
+  def bash_completion
+    prefix/"etc/bash_completion.d"
+  end
+
+  def zsh_completion
+    share/"zsh/site-functions"
+  end
+
+  def fish_completion
+    share/"fish/vendor_completions.d"
+  end
+
+  def bottle_prefix
+    prefix/".bottle"
+  end
 end
 
 # To prevent Formula#initialize from trying to validate the core tap, which
@@ -114,6 +234,7 @@ build_info['dependencies'].each do |name,dep|
   $fake_formula[name] = StubFormula.new(
     name: name,
     version: dep['version'],
+    prefix: Pathname.new(dep['path']),
     opt_prefix: Pathname.new(dep['path']),
     deps: deps,
   )
