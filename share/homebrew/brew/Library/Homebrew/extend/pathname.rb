@@ -401,7 +401,7 @@ class Pathname
 
         lines[0] = "#!/usr/bin/env -S #{env_export}#{first[2..-1]}"
 
-        file.write lines.join("\n")
+        file.write lines.join("")
       else
         dst.install(file)
         new_file = dst.join(file.basename)
