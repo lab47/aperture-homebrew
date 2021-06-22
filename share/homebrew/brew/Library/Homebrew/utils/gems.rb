@@ -113,9 +113,12 @@ module Homebrew
   end
 
   def find_in_path(executable)
-    ENV.fetch("PATH").split(":").find do |path|
-      File.executable?(File.join(path, executable))
+    ENV.fetch("PATH").split(":").each do |path|
+      full = File.join(path, executable)
+      return full if File.executable?(full)
     end
+
+    false
   end
 
   def install_bundler!
