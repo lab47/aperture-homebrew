@@ -10,7 +10,7 @@ class DevelopmentTools
       # in order to get the full path back as a Pathname.
       (@locate ||= {}).fetch(tool) do |key|
         @locate[key] = if path = Homebrew.find_in_path(tool)
-          Pathname.new path
+          Pathname.new tool
         # Homebrew GCCs most frequently; much faster to check this before xcrun
         elsif (path = HOMEBREW_PREFIX/"bin/#{tool}").executable?
           path

@@ -10,7 +10,7 @@ class DevelopmentTools
         @locate[key] = if (path = HOMEBREW_PREFIX/"bin/#{tool}").executable?
           path
         elsif path = Homebrew.find_in_path(tool)
-          Pathname.new path
+          Pathname.new tool
         end
       end
     end
