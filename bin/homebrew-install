@@ -222,22 +222,32 @@ module Formulary
   end
 end
 
-build_info['dependencies'].each do |name,dep|
-  top_deps.push Dependency.new(name, [:build, :runtime])
+2.times do |i|
+  build_info['dependencies'].each do |id,dep|
+    # Only inject homebrew-install deps, ie ones from homebrew itself, the first time.
+    next if i == 0 && !dep['dependencies'].any? { |i| i == "homebrew-install" }
 
-  $known_packages[name] = Pathname.new(dep['path'])
+    name = dep["name"]
 
-  deps = Dependencies.new(*dep['dependencies'].map { |i|
-    Dependency.new(i, [:build, :runtime])
-  })
+    # Let the earlier package of this name win.
+    next if $known_packages[name]
 
-  $fake_formula[name] = StubFormula.new(
-    name: name,
-    version: dep['version'],
-    prefix: Pathname.new(dep['path']),
-    opt_prefix: Pathname.new(dep['path']),
-    deps: deps,
-  )
+    top_deps.push Dependency.new(name, [:build, :runtime])
+
+    $known_packages[name] = Pathname.new(dep['path'])
+
+    deps = Dependencies.new(*dep['dependencies'].map { |i|
+      Dependency.new(i, [:build, :runtime])
+    })
+
+    $fake_formula[name] = StubFormula.new(
+      name: name,
+      version: dep['version'],
+      prefix: Pathname.new(dep['path']),
+      opt_prefix: Pathname.new(dep['path']),
+      deps: deps,
+    )
+  end
 end
 
 $fake_formula[build_info['name']] = OpenStruct.new(
@@ -260,6 +270,11 @@ require "socket"
 require "cmd/install"
 
 require 'homebrew/iris/extend/os/formula'
+
+# We don't want to leak these into an install, since they'll confuse any usage
+# of ruby.
+ENV.delete "GEM_HOME"
+ENV.delete "GEM_PATH"
 
 class Formula
   def self.names
@@ -412,6 +427,7 @@ class Build
       formula.extend(Debrew::Formula) if @args.debug?
 
       formula.update_head_version
+      formula.resources.each(&:fetch)
 
       formula.brew(
         fetch: true,
