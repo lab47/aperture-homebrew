@@ -12,6 +12,17 @@ require 'zlib'
 require 'base64'
 require 'fileutils'
 
+# We have to fake on_linux here because it's used in the formula
+# body to selectively include dependencies.
+
+module OnOS
+  undef :on_linux
+
+  def on_linux
+    yield
+  end
+end
+
 # form = Formulary.factory(Pathname.new(dir))
 # p form.name
 # c = form.bottle_specification.collector

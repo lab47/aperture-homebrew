@@ -28,7 +28,8 @@ module Stdenv
 
     self["HOMEBREW_ENV"] = "std"
 
-    PATH.new(ENV["HOMEBREW_PATH"]).each { |p| prepend_path "PATH", p }
+    # Use append here to honor the order inherent in HOMEBREW_PATH
+    PATH.new(ENV["HOMEBREW_PATH"]).each { |p| append_path "PATH", p }
 
     # Set the default pkg-config search path, overriding the built-in paths
     # Anything in PKG_CONFIG_PATH is searched before paths in this variable
