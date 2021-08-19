@@ -528,12 +528,12 @@ begin
 
   build   = Build.new(formula, options, args: args)
 
-  puts "Installing into: #{formula.prefix}"
- 
   formula.with_context(verbose: true) do
     if $post_install
+      puts "Running post-install in: #{formula.prefix}"
       formula.post_install
     else
+      puts "Installing into: #{formula.prefix}"
       build.install
     end
   end

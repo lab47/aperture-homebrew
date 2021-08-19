@@ -15,11 +15,13 @@ require 'fileutils'
 # We have to fake on_linux here because it's used in the formula
 # body to selectively include dependencies.
 
+$on_linux = false
+
 module OnOS
   undef :on_linux
 
   def on_linux
-    yield
+    yield if $on_linux
   end
 end
 
@@ -93,11 +95,23 @@ total = 0
 
 Dir[dir+"/*.rb"].each do |file|
   next if skip.any? { |s| file.end_with?("#{s}.rb") }
+
   begin
     form = Formulary.factory(Pathname.new(file))
   rescue FormulaUnreadableError
     p skip: file
     next
+  end
+
+  begin
+    Formulary.clear_cache
+    $on_linux = true
+    form_linux = Formulary.factory(Pathname.new(file))
+  rescue FormulaUnreadableError
+    p skip: file
+    next
+  ensure
+    $on_linux = false
   end
 
   name = form.name
@@ -110,6 +124,14 @@ Dir[dir+"/*.rb"].each do |file|
     end
   end
 
+  deps_linux = []
+
+  form_linux.deps.each do |d|
+    unless d.tags == [:test]
+      deps_linux << d.name
+    end
+  end
+
   code = File.read(file)
 
   # venv wants to see all the deps for opt_prefix to work, so the easiest
@@ -118,9 +140,11 @@ Dir[dir+"/*.rb"].each do |file|
     py = Formulary.factory("python@3.9")
     py.recursive_dependencies.each do |dep|
       deps << dep.name
+      deps_linux << dep.name
     end
 
     deps = deps.sort.uniq
+    deps_linux = deps_linux.sort.uniq
   end
 
   # openssl@1.1 tries to detect perl without it being a dep, which breaks
@@ -137,6 +161,7 @@ Dir[dir+"/*.rb"].each do |file|
   end
 
   import_deps = deps.map.with_index { |v,i| [v, "i#{i}"] }
+  import_deps_linux = deps_linux.map.with_index { |v,i| [v, "i#{i}"] }
 
   if name.size < 2
     short = name
@@ -156,10 +181,21 @@ formula = r"""
 <%= code.gsub('"""', '\"\"\"') %>
 """
 
+deps = []
+
 import "homebrew-install" as hi
-<% unless deps.empty? %>
-import <%= deps.map.with_index { |v,i| "\"#{v}\" as i#{i}" }.join(", ") %>
-<% end -%>
+
+if platform.os == "darwin" {
+  <% unless deps.empty? -%>
+  import <%= deps.map.with_index { |v,i| "\"#{v}\" as i#{i}" }.join(", ") %>
+  <% end -%>
+  deps = [<%= (["hi"]+deps.map.with_index { |_,i| "i#{i}" }).join(", ") %>]
+} else {
+  <% unless deps_linux.empty? -%>
+  import <%= deps_linux.map.with_index { |v,i| "\"#{v}\" as i#{i}" }.join(", ") %>
+  <% end -%>
+  deps = [<%= (["hi"]+deps_linux.map.with_index { |_,i| "i#{i}" }).join(", ") %>]
+}
 
 pkg(
   name: "<%= form.name %>",
@@ -173,13 +209,15 @@ pkg(
     "license": "<%= SPDX.license_expression_to_string(form.license) %>",
     "source": "homebrew",
   },
-  dependencies: [<%= (["hi"]+deps.map.with_index { |_,i| "i#{i}" }).join(", ") %>],
+  dependencies: deps,
 
   def install(ctx) {
     ctx.write_file(join(ctx.build, "<%= form.name %>.rb"), formula)
     ctx.system("homebrew-install", ctx.prefix, ctx.state_dir, "./<%= form.name %>.rb")
   }
 <% if form.method(:post_install).owner != Formula %>
+  explicit_dependencies: [hi]
+
   def post_install(ctx) {
     ctx.write_file(join(ctx.build, "<%= form.name %>.rb"), formula)
     ctx.system("homebrew-install", "--post", ctx.prefix, ctx.state_dir, "./<%= form.name %>.rb")
