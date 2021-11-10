@@ -246,6 +246,10 @@ class FakeTap
   def official
     false
   end
+
+  def core_tap?
+    true
+  end
 end
 
 class Tap
