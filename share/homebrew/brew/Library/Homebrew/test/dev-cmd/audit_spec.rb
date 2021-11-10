@@ -64,7 +64,16 @@ module Homebrew
         f.write text
       end
 
-      described_class.new(Formulary.factory(path), options)
+      formula = Formulary.factory(path)
+
+      if options.key? :tap_audit_exceptions
+        tap = Tap.fetch("test/tap")
+        allow(tap).to receive(:audit_exceptions).and_return(options[:tap_audit_exceptions])
+        allow(formula).to receive(:tap).and_return(tap)
+        options.delete :tap_audit_exceptions
+      end
+
+      described_class.new(formula, options)
     end
 
     let(:dir) { mktmpdir }
@@ -293,7 +302,7 @@ module Homebrew
       end
 
       it "checks online and verifies that a standard license id is the same "\
-        "as what is indicated on its Github repo", :needs_network do
+         "as what is indicated on its Github repo", :needs_network do
         formula_text = <<~RUBY
           class Cask < Formula
             url "https://github.com/cask/cask/archive/v0.8.4.tar.gz"
@@ -309,7 +318,7 @@ module Homebrew
       end
 
       it "checks online and verifies that a standard license id with AND is the same "\
-        "as what is indicated on its Github repo", :needs_network do
+         "as what is indicated on its Github repo", :needs_network do
         formula_text = <<~RUBY
           class Cask < Formula
             url "https://github.com/cask/cask/archive/v0.8.4.tar.gz"
@@ -325,7 +334,7 @@ module Homebrew
       end
 
       it "checks online and verifies that a standard license id with WITH is the same "\
-        "as what is indicated on its Github repo", :needs_network do
+         "as what is indicated on its Github repo", :needs_network do
         formula_text = <<~RUBY
           class Cask < Formula
             url "https://github.com/cask/cask/archive/v0.8.4.tar.gz"
@@ -407,7 +416,7 @@ module Homebrew
       end
 
       it "checks online and detects that a formula-specified license is not "\
-        "the same as what is indicated on its Github repository", :needs_network do
+         "the same as what is indicated on its Github repository", :needs_network do
         formula_text = <<~RUBY
           class Cask < Formula
             url "https://github.com/cask/cask/archive/v0.8.4.tar.gz"
@@ -441,7 +450,7 @@ module Homebrew
       end
 
       it "checks online and detects that an array of license does not contain "\
-        "what is indicated on its Github repository", :needs_network do
+         "what is indicated on its Github repository", :needs_network do
         formula_text = <<~RUBY
           class Cask < Formula
             url "https://github.com/cask/cask/archive/v0.8.4.tar.gz"
@@ -454,11 +463,11 @@ module Homebrew
 
         fa.audit_license
         expect(fa.problems.first[:message]).to match "Formula license [\"0BSD\", \"MIT\"] "\
-          "does not match GitHub license [\"GPL-3.0\"]."
+                                                     "does not match GitHub license [\"GPL-3.0\"]."
       end
 
       it "checks online and verifies that an array of license contains "\
-        "what is indicated on its Github repository", :needs_network do
+         "what is indicated on its Github repository", :needs_network do
         formula_text = <<~RUBY
           class Cask < Formula
             url "https://github.com/cask/cask/archive/v0.8.4.tar.gz"

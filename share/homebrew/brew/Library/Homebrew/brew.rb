@@ -2,8 +2,6 @@
 # frozen_string_literal: true
 
 if ENV["HOMEBREW_STACKPROF"]
-  require_relative "utils/gems"
-  Homebrew.setup_gem_environment!
   require "stackprof"
   StackProf.start(mode: :wall, raw: true)
 end
@@ -79,26 +77,16 @@ begin
   path = PATH.new(ENV["PATH"])
   homebrew_path = PATH.new(ENV["HOMEBREW_PATH"])
 
-  # Add SCM wrappers.
-  path.prepend(HOMEBREW_SHIMS_PATH/"scm")
-  homebrew_path.prepend(HOMEBREW_SHIMS_PATH/"scm")
+  # Add shared wrappers.
+  path.prepend(HOMEBREW_SHIMS_PATH/"shared")
+  homebrew_path.prepend(HOMEBREW_SHIMS_PATH/"shared")
 
   ENV["PATH"] = path
 
   require "commands"
   require "settings"
 
-  if cmd
-    internal_cmd = Commands.valid_internal_cmd?(cmd)
-    internal_cmd ||= begin
-      internal_dev_cmd = Commands.valid_internal_dev_cmd?(cmd)
-      if internal_dev_cmd && !Homebrew::EnvConfig.developer?
-        Homebrew::Settings.write "devcmdrun", true
-        ENV["HOMEBREW_DEV_CMD_RUN"] = "1"
-      end
-      internal_dev_cmd
-    end
-  end
+  internal_cmd = Commands.valid_internal_cmd?(cmd) || Commands.valid_internal_dev_cmd?(cmd) if cmd
 
   unless internal_cmd
     # Add contributed commands to PATH before checking.

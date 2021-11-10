@@ -74,7 +74,7 @@ module Homebrew
           description: "Install testing dependencies required to run `brew test` <formula>.",
         }],
         [:switch, "--HEAD", {
-          description: "If <formula> defines it, install the HEAD version, aka. master, trunk, unstable.",
+          description: "If <formula> defines it, install the HEAD version, aka. main, trunk, unstable, master.",
         }],
         [:switch, "--fetch-HEAD", {
           description: "Fetch the upstream repository to detect if the HEAD installation of the " \
@@ -95,7 +95,7 @@ module Homebrew
         }],
         [:switch, "--display-times", {
           env:         :display_install_times,
-          description: "Print install times for each formula at the end of the run.",
+          description: "Print install times for each package at the end of the run.",
         }],
         [:switch, "-i", "--interactive", {
           description: "Download and patch <formula>, then open a shell. This allows the user to " \
@@ -139,9 +139,11 @@ module Homebrew
 
     args.named.each do |name|
       next if File.exist?(name)
-      next if name !~ HOMEBREW_TAP_FORMULA_REGEX && name !~ HOMEBREW_CASK_TAP_CASK_REGEX
+      next unless name =~ HOMEBREW_TAP_FORMULA_REGEX
 
       tap = Tap.fetch(Regexp.last_match(1), Regexp.last_match(2))
+      next if (tap.core_tap? || tap == "homebrew/cask") && EnvConfig.install_from_api?
+
       tap.install unless tap.installed?
     end
 
@@ -155,7 +157,7 @@ module Homebrew
     end
 
     begin
-      formulae, casks = args.named.to_formulae_and_casks
+      formulae, casks = args.named.to_formulae_and_casks(prefer_loading_from_api: true)
                             .partition { |formula_or_cask| formula_or_cask.is_a?(Formula) }
     rescue FormulaOrCaskUnavailableError, Cask::CaskUnavailableError => e
       retry if Tap.install_default_cask_tap_if_necessary(force: args.cask?)
@@ -172,6 +174,7 @@ module Homebrew
         require_sha:    args.require_sha?,
         skip_cask_deps: args.skip_cask_deps?,
         quarantine:     args.quarantine?,
+        quiet:          args.quiet?,
       )
     end
 
@@ -202,28 +205,24 @@ module Homebrew
 
     Install.perform_preinstall_checks(cc: args.cc)
 
-    installed_formulae.each do |f|
-      Migrator.migrate_if_needed(f, force: args.force?)
-      Install.install_formula(
-        f,
-        build_bottle:               args.build_bottle?,
-        force_bottle:               args.force_bottle?,
-        bottle_arch:                args.bottle_arch,
-        ignore_deps:                args.ignore_dependencies?,
-        only_deps:                  args.only_dependencies?,
-        include_test_formulae:      args.include_test_formulae,
-        build_from_source_formulae: args.build_from_source_formulae,
-        cc:                         args.cc,
-        git:                        args.git?,
-        interactive:                args.interactive?,
-        keep_tmp:                   args.keep_tmp?,
-        force:                      args.force?,
-        debug:                      args.debug?,
-        quiet:                      args.quiet?,
-        verbose:                    args.verbose?,
-      )
-      Cleanup.install_formula_clean!(f)
-    end
+    Install.install_formulae(
+      installed_formulae,
+      build_bottle:               args.build_bottle?,
+      force_bottle:               args.force_bottle?,
+      bottle_arch:                args.bottle_arch,
+      ignore_deps:                args.ignore_dependencies?,
+      only_deps:                  args.only_dependencies?,
+      include_test_formulae:      args.include_test_formulae,
+      build_from_source_formulae: args.build_from_source_formulae,
+      cc:                         args.cc,
+      git:                        args.git?,
+      interactive:                args.interactive?,
+      keep_tmp:                   args.keep_tmp?,
+      force:                      args.force?,
+      debug:                      args.debug?,
+      quiet:                      args.quiet?,
+      verbose:                    args.verbose?,
+    )
 
     Upgrade.check_installed_dependents(
       installed_formulae,
@@ -253,6 +252,7 @@ module Homebrew
       return
     end
 
+    opoo e
     ohai "Searching for similarly named formulae..."
     formulae_search_results = search_formulae(e.name)
     case formulae_search_results.length
@@ -268,7 +268,6 @@ module Homebrew
       puts "To install one of them, run (for example):\n  brew install #{formulae_search_results.first}"
     end
 
-    ofail e.message
     if (reason = MissingFormula.reason(e.name))
       $stderr.puts reason
       return

@@ -28,7 +28,7 @@ describe Formula do
     let(:path) { Formulary.core_path(name) }
     let(:spec) { :stable }
     let(:alias_name) { "baz@1" }
-    let(:alias_path) { CoreTap.instance.alias_dir/alias_name }
+    let(:alias_path) { (CoreTap.instance.alias_dir/alias_name).to_s }
     let(:f) { klass.new(name, path, spec) }
     let(:f_alias) { klass.new(name, path, spec, alias_path: alias_path) }
 
@@ -41,6 +41,7 @@ describe Formula do
       expect(f.alias_path).to be nil
       expect(f.alias_name).to be nil
       expect(f.full_alias_name).to be nil
+      expect(f.specified_path).to eq(path)
       expect { klass.new }.to raise_error(ArgumentError)
     end
 
@@ -51,6 +52,7 @@ describe Formula do
       expect(f_alias.alias_path).to eq(alias_path)
       expect(f_alias.alias_name).to eq(alias_name)
       expect(f_alias.specified_name).to eq(alias_name)
+      expect(f_alias.specified_path).to eq(Pathname(alias_path))
       expect(f_alias.full_alias_name).to eq(alias_name)
       expect(f_alias.full_specified_name).to eq(alias_name)
       expect { klass.new }.to raise_error(ArgumentError)
@@ -71,6 +73,7 @@ describe Formula do
         expect(f.alias_path).to be nil
         expect(f.alias_name).to be nil
         expect(f.full_alias_name).to be nil
+        expect(f.specified_path).to eq(path)
         expect { klass.new }.to raise_error(ArgumentError)
       end
 
@@ -81,6 +84,7 @@ describe Formula do
         expect(f_alias.alias_path).to eq(alias_path)
         expect(f_alias.alias_name).to eq(alias_name)
         expect(f_alias.specified_name).to eq(alias_name)
+        expect(f_alias.specified_path).to eq(Pathname(alias_path))
         expect(f_alias.full_alias_name).to eq(full_alias_name)
         expect(f_alias.full_specified_name).to eq(full_alias_name)
         expect { klass.new }.to raise_error(ArgumentError)
@@ -563,6 +567,14 @@ describe Formula do
     expect(f.class.head).to be_kind_of(SoftwareSpec)
   end
 
+  specify "instance specs have different references" do
+    f = Testball.new
+    f2 = Testball.new
+
+    expect(f.stable.owner).to equal(f)
+    expect(f2.stable.owner).to equal(f2)
+  end
+
   specify "incomplete instance specs are not accessible" do
     f = formula do
       url "foo-1.0"
@@ -701,31 +713,52 @@ describe Formula do
     end
   end
 
-  specify "#service" do
-    f = formula do
-      url "https://brew.sh/test-1.0.tbz"
-    end
-
-    f.class.service do
-      run [opt_bin/"beanstalkd"]
-      run_type :immediate
-      error_log_path var/"log/beanstalkd.error.log"
-      log_path var/"log/beanstalkd.log"
-      working_dir var
-      keep_alive true
-    end
-    expect(f.service).not_to eq(nil)
-  end
-
-  specify "service uses simple run" do
-    f = formula do
-      url "https://brew.sh/test-1.0.tbz"
-      service do
-        run opt_bin/"beanstalkd"
+  describe "#service" do
+    specify "no service defined" do
+      f = formula do
+        url "https://brew.sh/test-1.0.tbz"
       end
+
+      expect(f.service).to eq(nil)
     end
 
-    expect(f.service).not_to eq(nil)
+    specify "service complicated" do
+      f = formula do
+        url "https://brew.sh/test-1.0.tbz"
+      end
+
+      f.class.service do
+        run [opt_bin/"beanstalkd"]
+        run_type :immediate
+        error_log_path var/"log/beanstalkd.error.log"
+        log_path var/"log/beanstalkd.log"
+        working_dir var
+        keep_alive true
+      end
+      expect(f.service).not_to eq(nil)
+    end
+
+    specify "service uses simple run" do
+      f = formula do
+        url "https://brew.sh/test-1.0.tbz"
+        service do
+          run opt_bin/"beanstalkd"
+        end
+      end
+
+      expect(f.service).not_to eq(nil)
+    end
+
+    specify "service helpers return data" do
+      f = formula do
+        url "https://brew.sh/test-1.0.tbz"
+      end
+
+      expect(f.plist_name).to eq("homebrew.mxcl.formula_name")
+      expect(f.service_name).to eq("homebrew.formula_name")
+      expect(f.plist_path).to eq(HOMEBREW_PREFIX/"opt/formula_name/homebrew.mxcl.formula_name.plist")
+      expect(f.systemd_service_path).to eq(HOMEBREW_PREFIX/"opt/formula_name/homebrew.formula_name.service")
+    end
   end
 
   specify "dependencies" do

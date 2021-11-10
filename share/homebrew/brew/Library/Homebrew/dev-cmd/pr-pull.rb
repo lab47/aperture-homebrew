@@ -49,8 +49,6 @@ module Homebrew
              description: "Message to include when autosquashing revision bumps, deletions, and rebuilds."
       flag   "--artifact=",
              description: "Download artifacts with the specified name (default: `bottles`)."
-      flag   "--archive-item=",
-             description: "Upload to the specified Internet Archive item (default: `homebrew`)."
       flag   "--tap=",
              description: "Target tap repository (default: `homebrew/core`)."
       flag   "--root-url=",
@@ -291,7 +289,10 @@ module Homebrew
 
   def formulae_need_bottles?(tap, original_commit, user, repo, pr, args:)
     return if args.dry_run?
-    return false if GitHub.pull_request_labels(user, repo, pr).include? "CI-syntax-only"
+
+    labels = GitHub.pull_request_labels(user, repo, pr)
+
+    return false if labels.include?("CI-syntax-only") || labels.include?("CI-no-bottles")
 
     changed_formulae(tap, original_commit).any? do |f|
       !f.bottle_unneeded? && !f.bottle_disabled?
@@ -337,7 +338,6 @@ module Homebrew
 
     workflows = args.workflows.presence || ["tests.yml"]
     artifact = args.artifact || "bottles"
-    archive_item = args.archive_item
     tap = Tap.fetch(args.tap || CoreTap.instance.name)
 
     Utils::Git.set_name_email!(committer: args.committer.blank?)
@@ -408,7 +408,6 @@ module Homebrew
           upload_args << "--committer=#{args.committer}" if args.committer
           upload_args << "--root-url=#{args.root_url}" if args.root_url
           upload_args << "--root-url-using=#{args.root_url_using}" if args.root_url_using
-          upload_args << "--archive-item=#{archive_item}" if archive_item.present?
           safe_system HOMEBREW_BREW_FILE, *upload_args
         end
       end

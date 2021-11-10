@@ -70,6 +70,8 @@ module Homebrew
 
       def fatal_setup_build_environment_checks
         %w[
+          check_xcode_minimum_version
+          check_clt_minimum_version
           check_if_supported_sdk_available
         ].freeze
       end
@@ -105,11 +107,12 @@ module Homebrew
 
       def check_for_unsupported_macos
         return if Homebrew::EnvConfig.developer?
+        return if ENV["HOMEBREW_INTEGRATION_TEST"]
 
         who = +"We"
-        what = if OS::Mac.prerelease?
+        what = if OS::Mac.version.prerelease?
           "pre-release version"
-        elsif OS::Mac.outdated_release?
+        elsif OS::Mac.version.outdated_release?
           who << " (and Apple)"
           "old version"
         end
@@ -139,7 +142,7 @@ module Homebrew
           #{MacOS::Xcode.update_instructions}
         EOS
 
-        if OS::Mac.prerelease?
+        if OS::Mac.version.prerelease?
           current_path = Utils.popen_read("/usr/bin/xcode-select", "-p")
           message += <<~EOS
             If #{MacOS::Xcode.latest_version} is installed, you may need to:
@@ -199,10 +202,10 @@ module Homebrew
 
       def check_ruby_version
         return if RUBY_VERSION == HOMEBREW_REQUIRED_RUBY_VERSION
-        return if Homebrew::EnvConfig.developer? && OS::Mac.prerelease?
+        return if Homebrew::EnvConfig.developer? && OS::Mac.version.prerelease?
 
         <<~EOS
-          Ruby version #{RUBY_VERSION} is unsupported on #{MacOS.version}. Homebrew
+          Ruby version #{RUBY_VERSION} is unsupported on macOS #{MacOS.version}. Homebrew
           is developed and tested on Ruby #{HOMEBREW_REQUIRED_RUBY_VERSION}, and may not work correctly
           on other Rubies. Patches are accepted as long as they don't cause breakage
           on supported Rubies.
@@ -255,17 +258,6 @@ module Homebrew
           You have not agreed to the Xcode license.
           Agree to the license by opening Xcode.app or running:
             sudo xcodebuild -license
-        EOS
-      end
-
-      def check_xquartz_up_to_date
-        return unless MacOS::XQuartz.outdated?
-
-        <<~EOS
-          Your XQuartz (#{MacOS::XQuartz.version}) is outdated.
-          Please install XQuartz #{MacOS::XQuartz.latest_version} (or delete the current version).
-          XQuartz can be updated using Homebrew Cask by running:
-            brew reinstall xquartz
         EOS
       end
 
@@ -433,9 +425,13 @@ module Homebrew
         locator = MacOS.sdk_locator
 
         source = if locator.source == :clt
+          return if MacOS::CLT.below_minimum_version? # Handled by other diagnostics.
+
           update_instructions = MacOS::CLT.update_instructions
           "Command Line Tools (CLT)"
         else
+          return if MacOS::Xcode.below_minimum_version? # Handled by other diagnostics.
+
           update_instructions = MacOS::Xcode.update_instructions
           "Xcode"
         end

@@ -231,7 +231,7 @@ class Pathname
     bottle_ext, = HOMEBREW_BOTTLES_EXTNAME_REGEX.match(basename).to_a
     return bottle_ext if bottle_ext
 
-    archive_ext = basename[/(\.(tar|cpio|pax)\.(gz|bz2|lz|xz|Z))\Z/, 1]
+    archive_ext = basename[/(\.(tar|cpio|pax)\.(gz|bz2|lz|xz|zst|Z))\Z/, 1]
     return archive_ext if archive_ext
 
     # Don't treat version numbers as extname.
@@ -261,7 +261,7 @@ class Pathname
     else
       false
     end
-  rescue Errno::EACCES, Errno::ENOENT, Errno::EBUSY
+  rescue Errno::EACCES, Errno::ENOENT, Errno::EBUSY, Errno::EPERM
     false
   end
 
@@ -381,7 +381,7 @@ class Pathname
     dirname.mkpath
     write <<~SH
       #!/bin/bash
-      #{env_export}exec -a "#{to_s}" "#{target}" #{args} "$@"
+      #{env_export}exec "#{target}" #{args} "$@"
     SH
   end
 
@@ -391,22 +391,9 @@ class Pathname
     Pathname.glob("#{self}/*") do |file|
       next if file.directory?
 
-      if file.read(2) == "#!"
-        lines = file.readlines
-
-        first = lines[0]
-
-        env_export = +""
-        env.each { |key, value| env_export << "#{key}=\"#{value}\" " }
-
-        lines[0] = "#!/usr/bin/env -S #{env_export}#{first[2..-1]}"
-
-        file.write lines.join("")
-      else
-        dst.install(file)
-        new_file = dst.join(file.basename)
-        file.write_env_script(new_file, env)
-      end
+      dst.install(file)
+      new_file = dst.join(file.basename)
+      file.write_env_script(new_file, env)
     end
   end
 

@@ -1,0 +1,137 @@
+diff --git a/share/homebrew/brew/Library/Homebrew/development_tools.rb b/share/homebrew/brew/Library/Homebrew/development_tools.rb
+index 1641841..dd1141a 100644
+--- a/share/homebrew/brew/Library/Homebrew/development_tools.rb
++++ b/share/homebrew/brew/Library/Homebrew/development_tools.rb
+@@ -9,8 +9,8 @@ class DevelopmentTools
+       # Give the name of the binary you look for as a string to this method
+       # in order to get the full path back as a Pathname.
+       (@locate ||= {}).fetch(tool) do |key|
+-        @locate[key] = if File.executable?(path = "/usr/bin/#{tool}")
+-          Pathname.new path
++        @locate[key] = if path = Homebrew.find_in_path(tool)
++          Pathname.new tool
+         # Homebrew GCCs most frequently; much faster to check this before xcrun
+         elsif (path = HOMEBREW_PREFIX/"bin/#{tool}").executable?
+           path
+diff --git a/share/homebrew/brew/Library/Homebrew/extend/ENV/std.rb b/share/homebrew/brew/Library/Homebrew/extend/ENV/std.rb
+index 9434fe0..32946b3 100644
+--- a/share/homebrew/brew/Library/Homebrew/extend/ENV/std.rb
++++ b/share/homebrew/brew/Library/Homebrew/extend/ENV/std.rb
+@@ -28,7 +28,8 @@ module Stdenv
+ 
+     self["HOMEBREW_ENV"] = "std"
+ 
+-    PATH.new(ENV["HOMEBREW_PATH"]).each { |p| prepend_path "PATH", p }
++    # Use append here to honor the order inherent in HOMEBREW_PATH
++    PATH.new(ENV["HOMEBREW_PATH"]).each { |p| append_path "PATH", p }
+ 
+     # Set the default pkg-config search path, overriding the built-in paths
+     # Anything in PKG_CONFIG_PATH is searched before paths in this variable
+@@ -54,8 +55,6 @@ module Stdenv
+     # Os is the default Apple uses for all its stuff so let's trust them
+     define_cflags "-Os #{SAFE_CFLAGS_FLAGS}"
+ 
+-    append "LDFLAGS", "-Wl,-headerpad_max_install_names"
+-
+     send(compiler)
+ 
+     return unless cc&.match?(GNU_GCC_REGEXP)
+diff --git a/share/homebrew/brew/Library/Homebrew/extend/os/linux/development_tools.rb b/share/homebrew/brew/Library/Homebrew/extend/os/linux/development_tools.rb
+index 6ad96f7..6e02f78 100644
+--- a/share/homebrew/brew/Library/Homebrew/extend/os/linux/development_tools.rb
++++ b/share/homebrew/brew/Library/Homebrew/extend/os/linux/development_tools.rb
+@@ -9,8 +9,8 @@ class DevelopmentTools
+       (@locate ||= {}).fetch(tool) do |key|
+         @locate[key] = if (path = HOMEBREW_PREFIX/"bin/#{tool}").executable?
+           path
+-        elsif File.executable?(path = "/usr/bin/#{tool}")
+-          Pathname.new path
++        elsif path = Homebrew.find_in_path(tool)
++          Pathname.new tool
+         end
+       end
+     end
+diff --git a/share/homebrew/brew/Library/Homebrew/extend/os/mac/extend/ENV/std.rb b/share/homebrew/brew/Library/Homebrew/extend/os/mac/extend/ENV/std.rb
+index 5500df0..d40fcec 100644
+--- a/share/homebrew/brew/Library/Homebrew/extend/os/mac/extend/ENV/std.rb
++++ b/share/homebrew/brew/Library/Homebrew/extend/os/mac/extend/ENV/std.rb
+@@ -16,6 +16,8 @@ module Stdenv
+       bottle_arch: bottle_arch, testing_formula: testing_formula
+     )
+ 
++    append "LDFLAGS", "-Wl,-headerpad_max_install_names"
++
+     # sed is strict, and errors out when it encounters files with
+     # mixed character sets
+     delete("LC_ALL")
+diff --git a/share/homebrew/brew/Library/Homebrew/extend/pathname.rb b/share/homebrew/brew/Library/Homebrew/extend/pathname.rb
+index 26ed332..6bebb63 100644
+--- a/share/homebrew/brew/Library/Homebrew/extend/pathname.rb
++++ b/share/homebrew/brew/Library/Homebrew/extend/pathname.rb
+@@ -381,7 +381,7 @@ class Pathname
+     dirname.mkpath
+     write <<~SH
+       #!/bin/bash
+-      #{env_export}exec "#{target}" #{args} "$@"
++      #{env_export}exec -a "#{to_s}" "#{target}" #{args} "$@"
+     SH
+   end
+ 
+@@ -391,9 +391,22 @@ class Pathname
+     Pathname.glob("#{self}/*") do |file|
+       next if file.directory?
+ 
+-      dst.install(file)
+-      new_file = dst.join(file.basename)
+-      file.write_env_script(new_file, env)
++      if file.read(2) == "#!"
++        lines = file.readlines
++
++        first = lines[0]
++
++        env_export = +""
++        env.each { |key, value| env_export << "#{key}=\"#{value}\" " }
++
++        lines[0] = "#!/usr/bin/env -S #{env_export}#{first[2..-1]}"
++
++        file.write lines.join("")
++      else
++        dst.install(file)
++        new_file = dst.join(file.basename)
++        file.write_env_script(new_file, env)
++      end
+     end
+   end
+ 
+diff --git a/share/homebrew/brew/Library/Homebrew/utils/gems.rb b/share/homebrew/brew/Library/Homebrew/utils/gems.rb
+index 0eaada3..697a0fe 100644
+--- a/share/homebrew/brew/Library/Homebrew/utils/gems.rb
++++ b/share/homebrew/brew/Library/Homebrew/utils/gems.rb
+@@ -113,9 +113,12 @@ module Homebrew
+   end
+ 
+   def find_in_path(executable)
+-    ENV.fetch("PATH").split(":").find do |path|
+-      File.executable?(File.join(path, executable))
++    ENV.fetch("PATH").split(":").each do |path|
++      full = File.join(path, executable)
++      return full if File.executable?(full)
+     end
++
++    false
+   end
+ 
+   def install_bundler!
+diff --git a/share/homebrew/brew/Library/Homebrew/utils/svn.rb b/share/homebrew/brew/Library/Homebrew/utils/svn.rb
+index e6f9fcd..5e0563f 100644
+--- a/share/homebrew/brew/Library/Homebrew/utils/svn.rb
++++ b/share/homebrew/brew/Library/Homebrew/utils/svn.rb
+@@ -22,7 +22,7 @@ module Utils
+       def version
+         return @version if defined?(@version)
+ 
+-        stdout, _, status = system_command(HOMEBREW_SHIMS_PATH/"scm/svn", args: ["--version"], print_stderr: false)
++        stdout, _, status = system_command("svn", args: ["--version"], print_stderr: false)
+         @version = status.success? ? stdout.chomp[/svn, version (\d+(?:\.\d+)*)/, 1] : nil
+       end
+ 

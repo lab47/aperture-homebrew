@@ -48,7 +48,7 @@ module Utils
         audit_result: T::Boolean,
       ).void
     }
-    def inreplace(paths, before = nil, after = nil, audit_result = false) # rubocop:disable Style/OptionalBooleanParameter
+    def inreplace(paths, before = nil, after = nil, audit_result = true) # rubocop:disable Style/OptionalBooleanParameter
       after = after.to_s if after.is_a? Symbol
 
       errors = {}

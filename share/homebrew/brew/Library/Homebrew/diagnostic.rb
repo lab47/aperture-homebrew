@@ -591,6 +591,8 @@ module Homebrew
 
       def check_coretap_integrity
         coretap = CoreTap.instance
+        return if !coretap.installed? && EnvConfig.install_from_api?
+
         broken_tap(coretap) || examine_git_origin(coretap.path, Homebrew::EnvConfig.core_git_remote)
       end
 
@@ -722,6 +724,8 @@ module Homebrew
         end
 
         repos.each do |name, path|
+          next unless path.exist?
+
           status = path.cd do
             `git status --untracked-files=all --porcelain 2>/dev/null`
           end
@@ -878,11 +882,20 @@ module Homebrew
 
       def check_deleted_formula
         kegs = Keg.all
-        deleted_formulae = []
-        kegs.each do |keg|
-          keg_name = keg.name
-          deleted_formulae << keg_name if Formulary.tap_paths(keg_name).blank?
-        end
+
+        deleted_formulae = kegs.map do |keg|
+          next if Formulary.tap_paths(keg.name).any?
+
+          if !CoreTap.instance.installed? && EnvConfig.install_from_api?
+            # Formulae installed with HOMEBREW_INSTALL_FROM_API should not count as deleted formulae
+            # but may not have a tap listed in their tab
+            tap = Tab.for_keg(keg).tap
+            next if (tap.blank? || tap.core_tap?) && Homebrew::API::Bottle.available?(keg.name)
+          end
+
+          keg.name
+        end.compact.uniq
+
         return if deleted_formulae.blank?
 
         <<~EOS
@@ -1000,7 +1013,7 @@ module Homebrew
       end
 
       def check_cask_xattr
-        result = system_command "/usr/bin/xattr"
+        result = system_command "/usr/bin/xattr", args: ["-h"]
 
         return if result.status.success?
 
@@ -1043,7 +1056,7 @@ module Homebrew
       end
 
       def all
-        methods.map(&:to_s).grep(/^check_/)
+        methods.map(&:to_s).grep(/^check_/).sort
       end
 
       def cask_checks
