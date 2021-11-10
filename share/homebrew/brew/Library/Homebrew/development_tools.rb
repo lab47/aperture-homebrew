@@ -14,8 +14,8 @@ class DevelopmentTools
       # Give the name of the binary you look for as a string to this method
       # in order to get the full path back as a Pathname.
       (@locate ||= {}).fetch(tool) do |key|
-        @locate[key] = if File.executable?(path = "/usr/bin/#{tool}")
-          Pathname.new path
+        @locate[key] = if path = Homebrew.find_in_path(tool)
+          Pathname.new tool
         # Homebrew GCCs most frequently; much faster to check this before xcrun
         elsif (path = HOMEBREW_PREFIX/"bin/#{tool}").executable?
           path

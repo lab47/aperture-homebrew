@@ -10,8 +10,8 @@ class DevelopmentTools
       (@locate ||= {}).fetch(tool) do |key|
         @locate[key] = if (path = HOMEBREW_PREFIX/"bin/#{tool}").executable?
           path
-        elsif File.executable?(path = "/usr/bin/#{tool}")
-          Pathname.new path
+        elsif path = Homebrew.find_in_path(tool)
+          Pathname.new tool
         end
       end
     end
