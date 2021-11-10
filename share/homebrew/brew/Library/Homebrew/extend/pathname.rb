@@ -381,7 +381,7 @@ class Pathname
     dirname.mkpath
     write <<~SH
       #!/bin/bash
-      #{env_export}exec "#{target}" #{args} "$@"
+      #{env_export}exec -a "#{to_s}" "#{target}" #{args} "$@"
     SH
   end
 
@@ -391,9 +391,23 @@ class Pathname
     Pathname.glob("#{self}/*") do |file|
       next if file.directory?
 
-      dst.install(file)
-      new_file = dst.join(file.basename)
-      file.write_env_script(new_file, env)
+      if file.read(2) == "#!"
+        lines = file.readlines
+
+        first = lines[0]
+
+        env_export = +""
+        env.each { |key, value| env_export << "#{key}=\"#{value}\" " }
+
+        lines[0] = "#!/usr/bin/env -S #{env_export}#{first[2..-1]}"
+
+        file.write lines.join("")
+      else
+        dst.install(file)
+        new_file = dst.join(file.basename)
+        file.write_env_script(new_file, env)
+      end
+
     end
   end
 
