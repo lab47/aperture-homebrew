@@ -248,7 +248,7 @@ class FakeTap
   end
 end
 
-module Tap
+class Tap
   def self.from_path(path)
     @fake_tap ||= FakeTap.new
   end
