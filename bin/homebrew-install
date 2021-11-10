@@ -222,6 +222,38 @@ module Formulary
   end
 end
 
+class FakeTap
+  def user
+    "lab47"
+  end
+
+  def repo
+    "aperture-packages"
+  end
+
+  def name
+    "lab47/aperture-packages"
+  end
+
+  def full_name
+    name
+  end
+
+  def issues_url
+    "https://github.com/lab47/aperture-packages/issues"
+  end
+
+  def official
+    false
+  end
+end
+
+module Tap
+  def self.from_path(path)
+    @fake_tap ||= FakeTap.new
+  end
+end
+
 2.times do |i|
   build_info['dependencies'].each do |id,dep|
     # Only inject homebrew-install deps, ie ones from homebrew itself, the first time.
